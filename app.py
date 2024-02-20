@@ -5,6 +5,7 @@ import sys
 import signal
 
 
+
 queues = ["create", "update", "remove", "status"]
 con_db = None
 
