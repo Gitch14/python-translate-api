@@ -26,15 +26,16 @@ def on_message(ch, method, properties, body):
 
 
 if __name__ == "__main__":
+    print("Start app....")
     con_db = psycopg2.connect(
         dbname="manga_translation_db",
         user="admin",
         password="admin1234",
-        host="localhost",
-        port="6544"
+        host="postgres",
+        port="5432"
     )
 
-    con_pika = pika.BlockingConnection(pika.ConnectionParameters("localhost", 5672, "/", pika.PlainCredentials("user", "111")))
+    con_pika = pika.BlockingConnection(pika.ConnectionParameters("rabbitmq", 5672, "/", pika.PlainCredentials("user", "111")))
     channel = con_pika.channel()
 
     channel.queue_declare(queues[0])
