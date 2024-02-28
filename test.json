@@ -1,0 +1,18 @@
+//{
+//  "image": {
+//          "fieldName": "step_1_image",
+//          "originalName": "step_1_image.jpg",
+//          "encoding": "base64",
+//          "content": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/4QM..."
+//        }
+//}
+
+
+
+{
+  "message": {
+    "email": "user",
+    "user": "user",
+    "password": "111"
+  }
+}
