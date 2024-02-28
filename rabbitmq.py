@@ -36,7 +36,7 @@ def connect_to_rabbitmq(connection_db=None):
 def on_message(ch, method, properties, body):
     logging.warning(f"Message - {json.loads(body)} by channel {method.routing_key}")
     message = json.loads(body)
-    message = {"message": json.loads(message['message'])}
+    # message = {"message": json.loads(message['message'])}
     if method.routing_key == "registrationServiceRoutingKey":
         new_user = message['message']
         create_user(connection_to_db, new_user["email"], new_user["user"], new_user["password"])
