@@ -4,7 +4,7 @@ import sys
 import logging
 import os
 import json
-from db import create_user
+from modules.db import create_user, create_recipe, create_step
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -24,7 +24,7 @@ def connect_to_rabbitmq(connection_db=None):
             logging.warning("Successfully connected to the RabbitMQ server")
             return connection
         except Exception as e:
-            print(e)
+            logging.warning(e)
             logging.warning("I can`t connect to the RabbitMQ server!!!")
             logging.warning(f"I wait {os.getenv('RABBITMQ_CONNECTION_TIMEOUT')} seconds and connect again...")
             time.sleep(int(os.getenv('RABBITMQ_CONNECTION_TIMEOUT')))
@@ -36,11 +36,20 @@ def connect_to_rabbitmq(connection_db=None):
 def on_message(ch, method, properties, body):
     logging.warning(f"Message - {json.loads(body)} by channel {method.routing_key}")
     message = json.loads(body)
-    # message = {"message": json.loads(message['message'])}
     if method.routing_key == "registrationServiceRoutingKey":
-        new_user = message['message']
-        create_user(connection_to_db, new_user["email"], new_user["user"], new_user["password"])
+        create_user(connection_to_db, message["email"], message["name"], message["password"])
         logging.warning(f"NEW USER SUCCESSFULLY CREATED")
+    elif method.routing_key == "recipeServiceCreateRoutingKey":
+        # with open("create_recipe.json", "w") as file:
+        #     json.dump(message, file, indent=4)
+        create_recipe(connection_to_db, message["title"], message["description"], message["type"], message["imagePath"],
+                      message["videoPath"], message["optional"], message["datePublish"],
+                      message["timeToCookAndPreparing"], message["timeToCook"], message["timeToPreparing"],
+                      message["difficulty"], message["calories"], message["proteins"], message["carbohydrates"],
+                      message["fats"], message["author"])
+        for step in message["steps"]:
+            create_step(connection_to_db, step["recipe"], step["stepNumber"], step["stepName"],
+                        step["imagePath"] if len(step["imagePath"]) < 255 else step["imagePath"][0:255], step["text"])
 
 
 def declare_and_consume_queues(connection: pika.BlockingConnection, queues):

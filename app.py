@@ -139,13 +139,14 @@
 #     # delete_file("test.txt", "recipetestbucket")
 #     # check_file("test.txt", "recipetestbucket")
 
-from rabbitmq import connect_to_rabbitmq, declare_and_consume_queues
-from rabbitmq import queues
-from db import connect_to_db
-from image import image_to_base64, base64_to_image
+from modules.rabbitmq import connect_to_rabbitmq, declare_and_consume_queues
+from modules.rabbitmq import queues
+from modules.db import connect_to_db
+import logging
 
 
 def main():
+    logging.warning('Starting app...')
     connection_db = connect_to_db()
     connection_pika = connect_to_rabbitmq(connection_db)
     channel = declare_and_consume_queues(connection_pika, queues)
