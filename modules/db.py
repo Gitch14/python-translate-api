@@ -3,6 +3,8 @@ import time
 import os
 import logging
 import sys
+from modules.image import base64_to_image
+from modules.s3 import put_file, check_exist, delete_file
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -29,55 +31,73 @@ def connect_to_db():
             sys.exit(1)
 
 
-def create_recipe(connection, title, description, type, image_path, video_path, optional, date_publish,
-                  time_to_cook_and_preparing, time_to_cook, time_to_preparing, difficulty_id, calories, proteins,
-                  carbohydrates, fats, author_id):
+def create_recipe(connection, s3_client, recipe: dict):
     cursor = connection.cursor()
-    sql = """INSERT INTO recipe (title, description, type, image_path, video_path, optional, date_publish, 
+    cursor.execute("""SELECT MAX(id) FROM recipe""")
+    res_max_id = cursor.fetchone()
+    if res_max_id[0] is not None:
+        recipe["recipe_id"] = res_max_id[0] + 1
+    else:
+        # print(f"Строка 40 --> {cursor.fetchone()}")
+        recipe["recipe_id"] = 1
+    recipe_sql = """INSERT INTO recipe (id, title, description, type, image_path, video_path, optional, date_publish, 
         time_to_cook_and_preparing, time_to_cook, time_to_preparing, difficulty_id, likes, dislikes, reports, rating, 
-        calories, proteins, carbohydrates, fats, author_id) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 0, 0,
-        0.0, %s, %s, %s, %s, %s)"""
+        calories, proteins, carbohydrates, fats, author_id) VALUES (%(recipe_id)s, %(title)s, %(description)s, %(type)s,
+         %(image)s, %(video)s, %(optional)s, %(datePublish)s, %(timeToCookAndPreparing)s, %(timeToCook)s, 
+        %(timeToPreparing)s, %(difficulty)s, 0, 0, 0, 0.0, null, null, null, null, %(userId)s)"""
+    # cursor.execute("""SELECT MAX(id) FROM recipe_step""")
+    # step_id = cursor.fetchone()[0] + 1
+    step_sql = """INSERT INTO recipe_step (id, recipe_id, step_number, step_name, image_path, text) 
+        VALUES (%(step_id)s, %(recipe_id)s, %(stepNumber)s, %(stepName)s, %(image_path)s, %(text)s)"""
     try:
-        cursor.execute(sql, (title, description, type, image_path, video_path, optional, date_publish,
-                            time_to_cook_and_preparing, time_to_cook, time_to_preparing, difficulty_id, calories,
-                             proteins, carbohydrates, fats, author_id))
+        print(recipe)
+        cursor.execute(recipe_sql, recipe)
+        for step in recipe["steps"]:
+            cursor.execute("""SELECT MAX(id) FROM recipe_step""")
+            res_max_id = cursor.fetchone()
+            if res_max_id[0] is not None:
+                step["step_id"] = res_max_id[0] + 1
+            else:
+                step["step_id"] = 1
+            step["recipe_id"] = recipe["recipe_id"]
+            if step["image"]["type"] == "image":
+                image_data = base64_to_image(step["image"]["data"])
+                step["image_path"] = (f"/user-{recipe["userId"]}/recipe-{recipe["recipe_id"]}"
+                                      f"/{step["stepName"] + "." + step["image"]["format"]}")
+                put_file_res = put_file(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"], image_data)
+                if not put_file_res and not check_exist(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"]):
+                    if not put_file(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"], image_data):
+                        raise Exception("Upload Failed")
+                cursor.execute(step_sql, step)
+
         connection.commit()
+        return True
     except Exception as e:
-        print(e)
+        print(f"Это 77 {e}")
         connection.rollback()
+        for step in recipe["steps"]:
+            if "image_path" in step and check_exist(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"]):
+                delete_file(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"])
+        return False
     finally:
         cursor.close()
 
 
-def create_step(connection, recipe_id, step_number, step_name, image_step, text):
+def create_user(connection, user: dict):
     cursor = connection.cursor()
-    sql = """INSERT INTO recipe_step (recipe_id, step_number, step_name, image_path, text) 
-        VALUES (%s, %s, %s, %s, %s)"""
-    try:
-        cursor.execute(sql, (recipe_id, step_number, step_name, image_step, text))
-        connection.commit()
-    except Exception as e:
-        print(e)
-        connection.rollback()
-    finally:
-        cursor.close()
-
-
-def create_user(connection, email, name, password):
-    cursor = connection.cursor()
-
-    query = """SELECT EXISTS (SELECT 1 FROM usr WHERE email = %s)"""
-    cursor.execute(query, (email,))
+    print("Создание пользователя")
+    cursor.execute("""SELECT EXISTS (SELECT 1 FROM usr WHERE email = %(email)s)""", user)
     exists = cursor.fetchone()[0]
     if exists:
         return "User already exists"
     try:
-        sql = """INSERT INTO usr (email, name, password) VALUES (%s, %s, %s)"""
-        cursor.execute(sql, (email, name, password))
+        cursor.execute("""INSERT INTO usr (email, name, password) VALUES (%(email)s, %(name)s, %(password)s)""", user)
         connection.commit()
+        return True
     except Exception as e:
         print(e)
         connection.rollback()
+        return False
     finally:
         cursor.close()
 
@@ -119,14 +139,20 @@ if __name__ == "__main__":
     # create_step(connection, None, 1, "Step 1", "apple_juice.mp4",
     #             "apple juice")
     cursor = connection.cursor()
-    # print(f"Result delete user  - {delete_user(connection, "test2@example.com")}")
-    cursor.execute("""SELECT * FROM recipe""")
-    rows = cursor.fetchall()
-    for row in rows:
-        print(row)
+
+    # cursor.execute("""SELECT * FROM recipe""")
+    # for row in cursor.fetchall():
+    #     print(row)
+
     cursor.execute("""SELECT * FROM recipe_step""")
-    rows = cursor.fetchall()
-    for row in rows:
+    # print(type(cursor.fetchone()[0]))
+    result = cursor.fetchall()
+    for row in result:
         print(row)
+
+    # if result[0] is None:
+    #     print("Это тип None")
+    # elif type(result[0]) == int:
+    #     print(f"Нет, это число -> {result[0]}")
     connection.close()
     

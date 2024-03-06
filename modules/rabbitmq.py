@@ -4,23 +4,27 @@ import sys
 import logging
 import os
 import json
-from modules.db import create_user, create_recipe, create_step
+from modules.db import create_user, create_recipe
 from dotenv import load_dotenv
 load_dotenv()
 
 queues = ["recipeServiceCreate", "recipeServiceUpdate", "recipeServiceRemove", "recipeServiceStatus",
           "registrationService"]
 connection_to_db = None
+s3_client = None
 
 
-def connect_to_rabbitmq(connection_db=None):
-    global connection_to_db
+def connect_to_rabbitmq(connection_db=None, s3=None):
+    global connection_to_db, s3_client
     if connection_db is not None:
         connection_to_db = connection_db
+    if s3 is not None:
+        s3_client = s3
     for attempt in range(int(os.getenv('RABBITMQ_CONNECTION_ATTEMPTS_COUNT'))):
         try:
             credentials = pika.PlainCredentials(os.getenv('RABBITMQ_USERNAME'), os.getenv('RABBITMQ_PASSWORD'))
-            connection = pika.BlockingConnection(pika.ConnectionParameters(os.getenv('RABBITMQ_HOST'), os.getenv('RABBITMQ_PORT'), "/", credentials))
+            connection = pika.BlockingConnection(pika.ConnectionParameters(
+                os.getenv('RABBITMQ_HOST'), os.getenv('RABBITMQ_PORT'), "/", credentials))
             logging.warning("Successfully connected to the RabbitMQ server")
             return connection
         except Exception as e:
@@ -36,20 +40,26 @@ def connect_to_rabbitmq(connection_db=None):
 def on_message(ch, method, properties, body):
     logging.warning(f"Message - {json.loads(body)} by channel {method.routing_key}")
     message = json.loads(body)
+
     if method.routing_key == "registrationServiceRoutingKey":
-        create_user(connection_to_db, message["email"], message["name"], message["password"])
-        logging.warning(f"NEW USER SUCCESSFULLY CREATED")
+        # create_user(connection_to_db, message["email"], message["name"], message["password"])
+        result = create_user(connection_to_db, message)
+        if result is True:
+            logging.warning(f"NEW USER SUCCESSFULLY CREATED")
+        elif result == "User already exists":
+            logging.warning(f"THIS USER IS EXISTS -> {message["email"]}")
+        else:
+            logging.warning(f"Error -> rabbitmq.py")
+
     elif method.routing_key == "recipeServiceCreateRoutingKey":
-        # with open("create_recipe.json", "w") as file:
-        #     json.dump(message, file, indent=4)
-        create_recipe(connection_to_db, message["title"], message["description"], message["type"], message["imagePath"],
-                      message["videoPath"], message["optional"], message["datePublish"],
-                      message["timeToCookAndPreparing"], message["timeToCook"], message["timeToPreparing"],
-                      message["difficulty"], message["calories"], message["proteins"], message["carbohydrates"],
-                      message["fats"], message["author"])
-        for step in message["steps"]:
-            create_step(connection_to_db, step["recipe"], step["stepNumber"], step["stepName"],
-                        step["imagePath"] if len(step["imagePath"]) < 255 else step["imagePath"][0:255], step["text"])
+        result = create_recipe(connection_to_db, s3_client, message)
+        if result:
+            logging.warning(f"NEW RECIPE SUCCESSFULLY CREATED")
+        else:
+            logging.warning(f"Error -> rabbitmq.py")
+
+        with open("create_recipe.json", "w") as file:
+            json.dump(message, file, indent=4)
 
 
 def declare_and_consume_queues(connection: pika.BlockingConnection, queues):
