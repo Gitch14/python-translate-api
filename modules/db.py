@@ -49,6 +49,8 @@ def create_recipe(connection, s3_client, recipe: dict):
     # step_id = cursor.fetchone()[0] + 1
     step_sql = """INSERT INTO recipe_step (id, recipe_id, step_number, step_name, image_path, text) 
         VALUES (%(step_id)s, %(recipe_id)s, %(stepNumber)s, %(stepName)s, %(image_path)s, %(text)s)"""
+    ingredients_sql = """INSERT INTO ingredient (id, recipe_id, name, value) 
+        VALUES (%(id)s, %(recipe_id)s, %(name)s, %(value)s)"""
     try:
         print(recipe)
         cursor.execute(recipe_sql, recipe)
@@ -69,6 +71,16 @@ def create_recipe(connection, s3_client, recipe: dict):
                     if not put_file(s3_client, os.getenv('S3_BUCKET_NAME'), step["image_path"], image_data):
                         raise Exception("Upload Failed")
                 cursor.execute(step_sql, step)
+
+        for ingredient in recipe["ingredients"]:
+            cursor.execute("""SELECT MAX(id) FROM ingredient""")
+            res_max_id = cursor.fetchone()
+            if res_max_id[0] is not None:
+                ingredient["id"] = res_max_id[0] + 1
+            else:
+                ingredient["id"] = 1
+            ingredient["recipe_id"] = recipe["recipe_id"]
+            cursor.execute(ingredients_sql, ingredient)
 
         connection.commit()
         return True
@@ -144,7 +156,7 @@ if __name__ == "__main__":
     # for row in cursor.fetchall():
     #     print(row)
 
-    cursor.execute("""SELECT * FROM recipe_step""")
+    cursor.execute("""SELECT * FROM ingredient""")
     # print(type(cursor.fetchone()[0]))
     result = cursor.fetchall()
     for row in result:
