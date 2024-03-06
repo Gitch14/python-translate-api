@@ -58,8 +58,8 @@ def on_message(ch, method, properties, body):
         else:
             logging.warning(f"Error -> rabbitmq.py")
 
-        with open("create_recipe.json", "w") as file:
-            json.dump(message, file, indent=4)
+        # with open("create_recipe.json", "w") as file:
+        #     json.dump(message, file, indent=4)
 
 
 def declare_and_consume_queues(connection: pika.BlockingConnection, queues):
